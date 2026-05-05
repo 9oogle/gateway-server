@@ -1,3 +1,23 @@
 spring:
   application:
     name: gateway-server
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE}
+  config:
+    import:
+      - "optional:configserver: "
+  cloud:
+    config:
+      discovery:
+        enabled: true
+        service-id: config-server
+eureka:
+  instance:
+    prefer-ip-address: false
+    hostname: ${HOSTNAME:localhost}
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://${EUREKA_SERVER_URL1:localhost}:9001/eureka/,http://${EUREKA_SERVER_URL2:localhost}:9002/eureka/
