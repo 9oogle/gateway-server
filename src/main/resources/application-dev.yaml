@@ -1,0 +1,64 @@
+server:
+  port: 9003
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: "http://localhost:9090/realms/goggles/protocol/openid-connect/certs"
+          issuer-uri: "http://localhost:9090/realms/goggles"
+
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:3000" #나중에 배포하면 실제 도메인 추가
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+
+      routes:
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/users/**, /api/v1/auth/**, /internal/v1/user/**
+
+        # 아래는 팀원들 경로 확정 후 수정
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - Path=/api/v1/orders/**
+
+        - id: lecture-service
+          uri: lb://lecture-service
+          predicates:
+            - Path=/api/v1/lectures/**
+
+        - id: mentoring-service
+          uri: lb://mentoring-service
+          predicates:
+            - Path=/api/v1/mentorings/**
+
+# 개발 환경에서만 Actuator 노출
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, gateway
+  endpoint:
+    gateway:
+      access: unrestricted
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: DEBUG
