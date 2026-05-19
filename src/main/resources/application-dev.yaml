@@ -48,6 +48,11 @@ spring:
           predicates:
             - Path=/api/v1/mentorings/**
 
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/v1/payments/**
+
 # 개발 환경에서만 Actuator 노출
 management:
   endpoints:

@@ -24,6 +24,8 @@ public class SecurityConfig {
                     .permitAll()
                     .pathMatchers("/actuator/health", "/actuator/info")
                     .permitAll()
+                    .pathMatchers(HttpMethod.GET, "/api/v1/payments/success", "/api/v1/payments/failure")
+                    .permitAll()
                     .pathMatchers("/internal/**")
                     .denyAll()
                     .anyExchange()
