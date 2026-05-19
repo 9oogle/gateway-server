@@ -1,0 +1,25 @@
+# prod: 단일 인스턴스
+services:
+  gateway-server:
+    image: ${IMAGE}:${IMAGE_TAG:-latest}
+    container_name: goggles-gateway-server
+    restart: unless-stopped
+    ports:
+      - "9003:9003"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: "9003"
+      EUREKA_SERVER_URL1: ${EUREKA_SERVER_URL1}
+      EUREKA_SERVER_URL2: ${EUREKA_SERVER_URL2}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9003/actuator/health 2>/dev/null | grep -q UP || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+    networks:
+      - goggles-network
+
+networks:
+  goggles-network:
+    external: true

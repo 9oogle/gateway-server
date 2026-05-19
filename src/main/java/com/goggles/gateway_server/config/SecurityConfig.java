@@ -22,6 +22,8 @@ public class SecurityConfig {
                     .permitAll()
                     .pathMatchers(HttpMethod.POST, "/api/v1/auth/login")
                     .permitAll()
+                    .pathMatchers("/actuator/health", "/actuator/info")
+                    .permitAll()
                     .pathMatchers("/internal/**")
                     .denyAll()
                     .anyExchange()

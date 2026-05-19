@@ -6,8 +6,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: "http://localhost:9090/realms/goggles/protocol/openid-connect/certs"
-          issuer-uri: "http://localhost:9090/realms/goggles"
+          jwk-set-uri: "${KEYCLOAK_URL:http://localhost:9090}/realms/goggles/protocol/openid-connect/certs"
+          issuer-uri: "${KEYCLOAK_URL:http://localhost:9090}/realms/goggles"
 
   cloud:
     gateway:
