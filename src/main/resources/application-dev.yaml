@@ -48,6 +48,11 @@ spring:
           predicates:
             - Path=/api/v1/mentorings/**
 
+        - id: mentoring-service-admin
+          uri: lb://mentoring-service
+          predicates:
+            - Path=/api/v1/admin/mentoring/**
+
         - id: payment-service
           uri: lb://payment-service
           predicates:
