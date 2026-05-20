@@ -41,7 +41,7 @@ spring:
         - id: lecture-service
           uri: lb://lecture-service
           predicates:
-            - Path=/api/v1/lectures/**
+            - Path=/api/v1/lectures/**, /api/v1/me/lectures/**
 
         - id: mentoring-service
           uri: lb://mentoring-service
