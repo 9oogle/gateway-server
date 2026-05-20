@@ -144,82 +144,87 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure app directory exists
-        uses: appleboy/ssh-action@v1
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
         with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ vars.VM_USER }}
-          port: ${{ vars.VM_SSH_PORT }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: mkdir -p ${{ vars.APP_DIR }}/${{ vars.SERVICE_NAME }}
+          workload_identity_provider: projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider-v2
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
 
-      - name: Copy compose file
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ vars.VM_USER }}
-          port: ${{ vars.VM_SSH_PORT }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          source: "docker-compose.dev.yml"
-          target: "${{ vars.APP_DIR }}/${{ vars.SERVICE_NAME }}"
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Prepare deploy script
+        run: |
+          cat > /tmp/deploy.sh << 'EOF'
+          set -e
+          APP_DIR="$1"
+          SERVICE="$2"
+          NEW_TAG="$3"
+          DEPLOY_IMAGE="$4"
+          ENV_FILE="$APP_DIR/.env"
+
+          cd $APP_DIR
+
+          PREV_TAG=$(grep '^IMAGE_TAG=' "$ENV_FILE" 2>/dev/null | cut -d= -f2)
+          [ -z "$PREV_TAG" ] && echo "이전 태그 없음 — 초기 배포로 간주"
+          echo "Previous: ${PREV_TAG:-(없음)} → New: $NEW_TAG"
+
+          upsert_env() {
+            local KEY="$1" VAL="$2"
+            if grep -q "^${KEY}=" "$ENV_FILE" 2>/dev/null; then
+              sed -i "s|^${KEY}=.*|${KEY}=${VAL}|" "$ENV_FILE"
+            else
+              echo "${KEY}=${VAL}" >> "$ENV_FILE"
+            fi
+          }
+
+          upsert_env IMAGE "$DEPLOY_IMAGE"
+          upsert_env IMAGE_TAG "$NEW_TAG"
+
+          docker compose -f docker-compose.dev.yml pull $SERVICE
+          docker compose -f docker-compose.dev.yml up -d $SERVICE
+
+          echo "Health check 시작... (port: 9003)"
+          for i in $(seq 1 8); do
+            sleep 30
+            if curl -sf "http://localhost:9003/actuator/health" > /dev/null; then
+              echo "Health check 통과 (시도 $i)"
+              exit 0
+            fi
+            echo "Health check 실패 ($i/8)"
+          done
+
+          [ -z "$PREV_TAG" ] && echo "이전 태그 없음 — 롤백 불가" && exit 1
+          echo "배포 실패 — $PREV_TAG 로 롤백..."
+          upsert_env IMAGE_TAG "$PREV_TAG"
+          docker compose -f docker-compose.dev.yml up -d $SERVICE
+          sleep 30
+          curl -sf "http://localhost:9003/actuator/health" > /dev/null && echo "롤백 성공" || echo "롤백도 실패"
+          exit 1
+          EOF
+
+      - name: Copy files to VM
+        run: |
+          gcloud compute ssh ${{ vars.VM_USER }}@service-vm \
+            --zone=asia-northeast3-a \
+            --tunnel-through-iap \
+            --command="mkdir -p ${{ vars.APP_DIR }}/${{ vars.SERVICE_NAME }}"
+          gcloud compute scp docker-compose.dev.yml /tmp/deploy.sh \
+            ${{ vars.VM_USER }}@service-vm:${{ vars.APP_DIR }}/${{ vars.SERVICE_NAME }}/ \
+            --zone=asia-northeast3-a \
+            --tunnel-through-iap
 
       - name: Deploy to VM
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ vars.VM_USER }}
-          port: ${{ vars.VM_SSH_PORT }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            set -e
-            APP_DIR="${{ vars.APP_DIR }}/${{ vars.SERVICE_NAME }}"
-            SERVICE="${{ vars.SERVICE_NAME }}"
-            NEW_TAG="${{ github.sha }}"
-            ENV_FILE="$APP_DIR/.env"
-
-            cd $APP_DIR
-
-            PREV_TAG=$(grep '^IMAGE_TAG=' "$ENV_FILE" 2>/dev/null | cut -d= -f2)
-            if [ -z "$PREV_TAG" ]; then
-              echo "이전 태그 없음 — 초기 배포로 간주, 실패 시 롤백 불가"
-            fi
-            echo "Previous: ${PREV_TAG:-(없음)} → New: $NEW_TAG"
-
-            upsert_env() {
-              local KEY="$1" VAL="$2"
-              if grep -q "^${KEY}=" "$ENV_FILE" 2>/dev/null; then
-                sed -i "s|^${KEY}=.*|${KEY}=${VAL}|" "$ENV_FILE"
-              else
-                echo "${KEY}=${VAL}" >> "$ENV_FILE"
-              fi
-            }
-
-            upsert_env IMAGE "${{ env.IMAGE }}"
-            upsert_env IMAGE_TAG "$NEW_TAG"
-
-            docker compose -f docker-compose.dev.yml pull $SERVICE
-            docker compose -f docker-compose.dev.yml up -d $SERVICE
-
-            echo "Health check 시작... (port: 9003)"
-            for i in $(seq 1 8); do
-              sleep 30
-              if curl -sf "http://localhost:9003/actuator/health" > /dev/null; then
-                echo "Health check 통과 (시도 $i)"
-                exit 0
-              fi
-              echo "Health check 실패 ($i/8)"
-            done
-
-            if [ -z "$PREV_TAG" ]; then
-              echo "이전 태그 없음 — 롤백 불가, 수동 복구 필요"
-              exit 1
-            fi
-            echo "배포 실패 — $PREV_TAG 로 롤백..."
-            upsert_env IMAGE_TAG "$PREV_TAG"
-            docker compose -f docker-compose.dev.yml up -d $SERVICE
-            sleep 30
-            curl -sf "http://localhost:9003/actuator/health" > /dev/null && echo "롤백 성공" || echo "롤백도 실패"
-            exit 1
+        run: |
+          gcloud compute ssh ${{ vars.VM_USER }}@service-vm \
+            --zone=asia-northeast3-a \
+            --tunnel-through-iap \
+            --command="bash ${{ vars.APP_DIR }}/${{ vars.SERVICE_NAME }}/deploy.sh \
+              '${{ vars.APP_DIR }}/${{ vars.SERVICE_NAME }}' \
+              '${{ vars.SERVICE_NAME }}' \
+              '${{ github.sha }}' \
+              '${{ env.IMAGE }}'"
 
   # main 브랜치: 단일 VM 배포
   deploy-prod:
